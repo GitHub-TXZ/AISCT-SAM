@@ -116,7 +116,7 @@ class AIS_SAM(nn.Module):
         self.w_Bs = []
         # Frozen foundation model ViT encoder
         for n, value in image_encoder.named_parameters():
-            value.requires_grad = False   #首先冻结所有参数            decoder和组合微调都是在后面加上的，所以参数必定是需要梯度的
+            value.requires_grad = False   #首先冻结所有参数   decoder和组合微调都是在后面加上的，所以参数必定是需要梯度的
             if 'depth_branch' in n:
                 value.requires_grad = True
             if 'fuse_mlp' in n:
@@ -168,18 +168,16 @@ class AIS_SAM(nn.Module):
             batched_input = batched_input.repeat(1, 3, 1, 1, 1)
         if batched_input.shape[1] == 2:
             semantic_prompts = self.spg(batched_input[:, 0, :, :, :].unsqueeze(1), batched_input[:, 1, :, :, :].unsqueeze(1))
-            semantic_prompts = rearrange(semantic_prompts, 'b c d h w -> (b d) c h w')
+            # semantic_prompts = rearrange(semantic_prompts, 'b c d h w -> (b d) c h w')
             batched_input = batched_input[:, 0, :, :, :].unsqueeze(1)
             batched_input = batched_input.repeat(1, 3, 1, 1, 1)
-
-        # batched_input = rearrange(batched_input, 'b c d h w -> (b d) c h w')
-        # batched_input = batched_input.squeeze(0).permute(1, 0, 2, 3)
         b, c, d, h, w = batched_input.shape
         batched_input = batched_input.permute(0, 2, 1, 3, 4)  #(b, d, c, h, w)
         batched_input = batched_input.contiguous().view(b*d, c, h, w)
         img_embedding, hidden_output = self.image_encoder(batched_input)
-        hidden_output[-1] = torch.cat([img_embedding, semantic_prompts], dim=1).permute(0, 2, 3, 1)
-        pred = self.mask_decoder(hidden_output[0], hidden_output, b, d)
+        hidden_output[-1] = img_embedding.permute(0,2,3,1) # hidden_output[-1] 没有经过 Neck，所以替换掉
+        hidden_output[0] = hidden_output[0].permute(0,2,3,1)
+        pred = self.mask_decoder(hidden_output, semantic_prompts, b, d)
         return pred
 
 

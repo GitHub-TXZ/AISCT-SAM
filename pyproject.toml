@@ -77,7 +77,7 @@ nnUNetv2_export_model_to_zip = "nnunetv2.model_sharing.entry_points:export_pretr
 nnUNetv2_move_plans_between_datasets = "nnunetv2.experiment_planning.plans_for_pretraining.move_plans_between_datasets:entry_point_move_plans_between_datasets"
 nnUNetv2_evaluate_folder = "nnunetv2.evaluation.evaluate_predictions:evaluate_folder_entry_point"
 nnUNetv2_evaluate_simple = "nnunetv2.evaluation.evaluate_predictions:evaluate_simple_entry_point"
-nnUNetv2_convert_MSD_dataset = "nnunetv2.dataset_conversion.convert_MSD_dataset:entry_point"
+nnUNetv2_convert_MSD_dataset = "nnunetv2.dataset_conversion.convet_MSD_rdataset:entry_point"
 
 [project.optional-dependencies]
 dev = [

@@ -21,7 +21,19 @@ import numpy as np
 import re
 
 from nnunetv2.paths import nnUNet_raw
+import importlib
 
+def dynamic_import(module_name, class_name):
+    try:
+        # 动态导入模块
+        module = importlib.import_module(module_name)
+        # 从模块中获取类对象
+        my_class = getattr(module, class_name)
+        return my_class
+    except ModuleNotFoundError:
+        print(f"找不到模块 {module_name}")
+    except AttributeError:
+        print(f"在模块 {module_name} 中找不到类 {class_name}")
 
 def get_identifiers_from_splitted_dataset_folder(folder: str, file_ending: str):
     files = subfiles(folder, suffix=file_ending, join=False)

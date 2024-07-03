@@ -51,7 +51,7 @@ class SRU(nn.Module):
     def forward(self, x):
         gn_x = self.gn(x)
         w_gamma = self.gn.weight/sum(self.gn.weight)
-        w_gamma = w_gamma.view(1, -1, 1, 1)
+        w_gamma = w_gamma.view(1, -1, 1, 1, 1)
         reweigts = self.sigomid(gn_x * w_gamma)
         # Gate
         w1 = torch.where(reweigts > self.gate_treshold, torch.ones_like(
@@ -84,19 +84,19 @@ class CRU(nn.Module):
         super().__init__()
         self.up_channel = up_channel = int(alpha*op_channel)
         self.low_channel = low_channel = op_channel-up_channel
-        self.squeeze1 = nn.Conv2d(
+        self.squeeze1 = nn.Conv3d(
             up_channel, up_channel//squeeze_radio, kernel_size=1, bias=False)
-        self.squeeze2 = nn.Conv2d(
+        self.squeeze2 = nn.Conv3d(
             low_channel, low_channel//squeeze_radio, kernel_size=1, bias=False)
         # up
-        self.GWC = nn.Conv2d(up_channel//squeeze_radio, op_channel, kernel_size=group_kernel_size,
+        self.GWC = nn.Conv3d(up_channel//squeeze_radio, op_channel, kernel_size=group_kernel_size,
                              stride=1, padding=group_kernel_size//2, groups=group_size)
-        self.PWC1 = nn.Conv2d(up_channel//squeeze_radio,
+        self.PWC1 = nn.Conv3d(up_channel//squeeze_radio,
                               op_channel, kernel_size=1, bias=False)
         # low
-        self.PWC2 = nn.Conv2d(low_channel//squeeze_radio, op_channel -
+        self.PWC2 = nn.Conv3d(low_channel//squeeze_radio, op_channel -
                               low_channel//squeeze_radio, kernel_size=1, bias=False)
-        self.advavg = nn.AdaptiveAvgPool2d(1)
+        self.advavg = nn.AdaptiveAvgPool3d(1)
 
     def forward(self, x):
         # Split
@@ -139,6 +139,8 @@ class ScConv(nn.Module):
 
 
 if __name__ == '__main__':
-    x = torch.randn(1, 32, 16, 16)
+    x = torch.randn(1, 32, 16, 16, 16)
     model = ScConv(32)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total number of parameters in the model: {total_params}")
     print(model(x).shape)

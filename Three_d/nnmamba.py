@@ -225,7 +225,19 @@ class nnMamba(nn.Module):
 
 
 if __name__ == "__main__":
+    import numpy as np
+    input_shape = (2, 1, 128, 128, 128)  # (batch_size, channels, height, width, depth)
+    input_data = torch.randn(input_shape).cuda()
     model = nnMamba().cuda()
-     = torch.zeroinputs((2, 1, 128, 128, 128)).cuda()
-    output = model(input)
-    print(output.shape)
+    model_parameters = filter(lambda p: p.requires_grad , model.parameters())
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    print(f"总参数数量：{params / 1e6}M")
+    # 获取每个层的参数数量和名称
+    for name , param in model.named_parameters():
+        print(f"层名称: {name}, 参数形状: {param.shape}")
+
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total parameters: {total_params / 1e6}M")
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Trainable parameters: {trainable_params / 1e6}M")
+    pass

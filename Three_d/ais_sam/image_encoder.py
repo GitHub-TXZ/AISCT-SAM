@@ -9,8 +9,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from typing import Optional, Tuple, Type
-
-from .common import LayerNorm2d, MLPBlock
+if __name__ == '__main__':
+    from common import LayerNorm2d, MLPBlock
+else:
+    from .common import LayerNorm2d , MLPBlock
 
 
 # This class and its supporting functions below lightly adapted from the ViTDet backbone available at: https://github.com/facebookresearch/detectron2/blob/main/detectron2/modeling/backbone/vit.py # noqa
@@ -56,7 +58,9 @@ class Adapter_Layer(nn.Module):
         return self.norm(x)
 
 
-class Depth_branch(nn.Module):
+
+
+class Depth_branch(nn.Module): # DA的V1版本
     def __init__(self, dim):
         super().__init__()
         self.conv_block = nn.Sequential(
@@ -85,6 +89,59 @@ class Depth_branch(nn.Module):
         x = x.contiguous().view(bd_size, hw_size, hw_size, c_size)  # [b*d, h, w, c]
         x = shortcut + x
         return x
+
+class Depth_Adapter(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.layernorm = nn.LayerNorm(dim)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.channel_down = nn.Conv3d(dim, dim // 6, kernel_size=(1, 1, 1))
+        self.DWC = nn.Conv3d(dim // 6, dim // 6, kernel_size=(3, 3, 3), stride=1, padding=(1, 1, 1),groups=dim//6)
+        self.PWC = nn.Conv3d(dim // 6, dim // 6, kernel_size=(1, 1, 1), stride=1)
+        # self.regular_conv3d = nn.Conv3d(dim // 6, dim // 6, kernel_size=(3, 3, 3), stride=1, padding=(1, 1, 1))
+        self.channel_up = nn.Conv3d(dim // 6, dim, kernel_size=(1,1,1))
+        # self.conv_block = nn.Sequential(
+        #     nn.Conv3d(dim, dim // 3, kernel_size=(3, 1, 1), stride=1, padding=(1, 0, 0), bias=False),
+        #     nn.InstanceNorm3d(dim // 3),
+        #     nn.ReLU(),
+        #     nn.Conv3d(dim // 3, dim // 3, kernel_size=(3, 1, 1), stride=1, padding=(1, 0, 0), bias=False),
+        #     nn.InstanceNorm3d(dim // 3),
+        #     nn.ReLU(),
+        #     nn.Conv3d(dim // 3, dim, kernel_size=(3, 1, 1), stride=1, padding=(1, 0, 0), bias=False),
+        #     nn.InstanceNorm3d(dim // 3, dim),
+        #     nn.ReLU()
+        # )
+        for m in self.modules():
+            if isinstance(m, (nn.Linear, nn.Conv2d, nn.Conv3d, nn.ConvTranspose2d)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+
+    def forward(self, x, d_size):  # [b*d, h, w, c]
+        # shortcut = x
+        bd_size, hw_size, c_size = x.shape[0], x.shape[1], x.shape[3]
+        d_size = d_size
+        x = x.contiguous().view(int(bd_size / d_size), d_size, hw_size, hw_size, c_size)  # [b, d, h, w, c]
+        x = self.layernorm(x)
+        x = torch.permute(x, (0, -1, 1, 2, 3))  # [b, c, d, h, w]
+        # x = self.conv_block(x)
+        x = self.channel_down(x)
+        x = self.relu1(x)
+        x = self.DWC(x)
+        x = self.PWC(x)
+        # x = self.regular_conv3d(x)
+        x = self.relu2(x)
+        x = self.channel_up(x)
+        x = torch.permute(x, (0, 2, 3, 4, 1))  # [b, d, h, w, c]
+        x = x.contiguous().view(bd_size, hw_size, hw_size, c_size)  # [b*d, h, w, c]
+        # x = shortcut + x
+        return x
+
+if __name__ == '__main__':
+    input = torch.randn(80 , 16 , 16 , 768).cuda()
+    model =  Depth_Adapter(768).cuda()
+    output = model(input, 40)
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total parameters: {total_params / 1e6}M")
 
 
 class ImageEncoderViT(nn.Module):
@@ -241,9 +298,9 @@ class Block(nn.Module):
 
         self.window_size = window_size
         self.Adapter = Adapter_Layer(dim)
-        self.depth_branch = Depth_branch(dim)
+        self.depth_branch = Depth_Adapter(dim)
         # self.fuse_mlp = nn.Linear(2 * dim, dim, bias=False)
-        self.fuse_conv = nn.Conv2d(2 * dim, dim, kernel_size=1, bias=False)
+        # self.fuse_conv = nn.Conv2d(2 * dim, dim, kernel_size=1, bias=False)
 
     def forward(self, x: torch.Tensor, d_size) -> torch.Tensor:
         shortcut = x
@@ -265,8 +322,8 @@ class Block(nn.Module):
         x = shortcut + self.Adapter(x)
         x = x + self.mlp(self.norm2(x))
         # x = self.fuse_mlp(torch.cat([x, depth_x], dim=-1))  # [b*d, h, w, c]
-        x = self.fuse_conv(torch.cat([x, depth_x], dim=-1).permute(0, 3, 1, 2)).permute(0, 2, 3, 1)  # [b*d, h, w, c]
-        return x
+        # x = self.fuse_conv(torch.cat([x, depth_x], dim=-1).permute(0, 3, 1, 2)).permute(0, 2, 3, 1)  # [b*d, h, w, c]
+        return x+depth_x
 
 
 class Attention(nn.Module):

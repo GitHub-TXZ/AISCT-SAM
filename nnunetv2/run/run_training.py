@@ -1,4 +1,7 @@
 import os
+os.environ['nnUNet_raw'] = '/repository/users/tanxz/nnUNet_Database/nnUNet_raw'
+os.environ['nnUNet_preprocessed'] = '/repository/users/tanxz/nnUNet_Database/nnUNet_preprocessed'
+os.environ['nnUNet_results'] = '/repository/users/tanxz/nnUNet_Database/nnUNet_results'
 import socket
 from typing import Union, Optional
 
@@ -34,7 +37,9 @@ def get_trainer_from_args(dataset_name_or_id: Union[int, str],
                           trainer_name: str = 'nnUNetTrainer',
                           plans_identifier: str = 'nnUNetPlans',
                           use_compressed: bool = False,
-                          device: torch.device = torch.device('cuda')):
+                          device: torch.device = torch.device('cuda'),
+                          model_name='None',
+                          ex_name='None'):
     # load nnunet class and do sanity checks
     nnunet_trainer = recursive_find_python_class(join(nnunetv2.__path__[0], "training", "nnUNetTrainer"),
                                                 trainer_name, 'nnunetv2.training.nnUNetTrainer')
@@ -63,7 +68,8 @@ def get_trainer_from_args(dataset_name_or_id: Union[int, str],
     plans = load_json(plans_file)
     dataset_json = load_json(join(preprocessed_dataset_folder_base, 'dataset.json'))
     nnunet_trainer = nnunet_trainer(plans=plans, configuration=configuration, fold=fold,
-                                    dataset_json=dataset_json, unpack_dataset=not use_compressed, device=device)
+                                    dataset_json=dataset_json, unpack_dataset=not use_compressed, device=device, \
+                                    model_name=model_name, ex_name=ex_name)
     return nnunet_trainer
 
 
@@ -147,7 +153,9 @@ def run_training(dataset_name_or_id: Union[str, int],
                  only_run_validation: bool = False,
                  disable_checkpointing: bool = False,
                  val_with_best: bool = False,
-                 device: torch.device = torch.device('cuda')):
+                 device: torch.device = torch.device('cuda'),
+                 model_name: str = 'None',
+                 ex_name: str = 'None',):
     if isinstance(fold, str):
         if fold != 'all':
             try:
@@ -187,7 +195,7 @@ def run_training(dataset_name_or_id: Union[str, int],
                  join=True)
     else:
         nnunet_trainer = get_trainer_from_args(dataset_name_or_id, configuration, fold, trainer_class_name,
-                                               plans_identifier, use_compressed_data, device=device)
+                                               plans_identifier, use_compressed_data, device=device, model_name=model_name, ex_name=ex_name)
 
         if disable_checkpointing:
             nnunet_trainer.disable_checkpointing = disable_checkpointing
@@ -211,11 +219,11 @@ def run_training(dataset_name_or_id: Union[str, int],
 def run_training_entry():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('dataset_name_or_id', type=str,
+    parser.add_argument('-dataset_name_or_id', type=str, default='18',
                         help="Dataset name or ID to train with")
-    parser.add_argument('configuration', type=str,
+    parser.add_argument('-configuration', type=str, default='3d_fullres',
                         help="Configuration that should be trained")
-    parser.add_argument('fold', type=str,
+    parser.add_argument('-fold', type=str,default='0',
                         help='Fold of the 5-fold cross-validation. Should be an int between 0 and 4.')
     parser.add_argument('-tr', type=str, required=False, default='nnUNetTrainer',
                         help='[OPTIONAL] Use this flag to specify a custom trainer. Default: nnUNetTrainer')
@@ -233,9 +241,9 @@ def run_training_entry():
     parser.add_argument('--npz', action='store_true', required=False,
                         help='[OPTIONAL] Save softmax predictions from final validation as npz files (in addition to predicted '
                              'segmentations). Needed for finding the best ensemble.')
-    parser.add_argument('--c', action='store_true', required=False,
+    parser.add_argument('--c', action='store_true', required=False, default = False,
                         help='[OPTIONAL] Continue training from latest checkpoint')
-    parser.add_argument('--val', action='store_true', required=False,
+    parser.add_argument('--val', action='store_true', required=False, default = False,
                         help='[OPTIONAL] Set this flag to only run the validation. Requires training to have finished.')
     parser.add_argument('--val_best', action='store_true', required=False,
                         help='[OPTIONAL] If set, the validation will be performed with the checkpoint_best instead '
@@ -249,7 +257,9 @@ def run_training_entry():
                     help="Use this to set the device the training should run with. Available options are 'cuda' "
                          "(GPU), 'cpu' (CPU) and 'mps' (Apple M1/M2). Do NOT use this to set which GPU ID! "
                          "Use CUDA_VISIBLE_DEVICES=X nnUNetv2_train [...] instead!")
-    args = parser.parse_args()
+    parser.add_argument('-model_name', type=str, default='ClSeg', help="specify the network to use. Default: nnUNet")
+    parser.add_argument('-ex_name', type=str, default='Ex1@b_2_p_16_320_320_s_3.0_0.4375_0.4375', help="experiment name.")
+    args = parser.parse_args()  # default='benchmark@b_2_p_20_320_256_s_5.0_0.379_0.379'
 
     assert args.device in ['cpu', 'cuda', 'mps'], f'-device must be either cpu, mps or cuda. Other devices are not tested/supported. Got: {args.device}.'
     if args.device == 'cpu':
@@ -267,8 +277,11 @@ def run_training_entry():
 
     run_training(args.dataset_name_or_id, args.configuration, args.fold, args.tr, args.p, args.pretrained_weights,
                  args.num_gpus, args.use_compressed, args.npz, args.c, args.val, args.disable_checkpointing, args.val_best,
-                 device=device)
+                 device=device, model_name=args.model_name, ex_name=args.ex_name)
 
 
 if __name__ == '__main__':
+    import os
+    # os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+
     run_training_entry()

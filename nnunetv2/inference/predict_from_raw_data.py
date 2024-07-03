@@ -581,61 +581,61 @@ class nnUNetPredictor(object):
         # is set. Whyyyyyyy. (this is why we don't make use of enabled=False)
         # So autocast will only be active if we have a cuda device.
         with torch.no_grad():
-            with torch.autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
-                assert input_image.ndim == 4, 'input_image must be a 4D np.ndarray or torch.Tensor (c, x, y, z)'
+            # with torch.autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
+            assert input_image.ndim == 4, 'input_image must be a 4D np.ndarray or torch.Tensor (c, x, y, z)'
 
-                if self.verbose: print(f'Input shape: {input_image.shape}')
-                if self.verbose: print("step_size:", self.tile_step_size)
-                if self.verbose: print("mirror_axes:", self.allowed_mirroring_axes if self.use_mirroring else None)
+            if self.verbose: print(f'Input shape: {input_image.shape}')
+            if self.verbose: print("step_size:", self.tile_step_size)
+            if self.verbose: print("mirror_axes:", self.allowed_mirroring_axes if self.use_mirroring else None)
 
-                # if input_image is smaller than tile_size we need to pad it to tile_size.
-                data, slicer_revert_padding = pad_nd_image(input_image, self.configuration_manager.patch_size,
-                                                           'constant', {'value': 0}, True,
-                                                           None)
+            # if input_image is smaller than tile_size we need to pad it to tile_size.
+            data, slicer_revert_padding = pad_nd_image(input_image, self.configuration_manager.patch_size,
+                                                       'constant', {'value': 0}, True,
+                                                       None)
 
-                slicers = self._internal_get_sliding_window_slicers(data.shape[1:])
+            slicers = self._internal_get_sliding_window_slicers(data.shape[1:])
 
-                # preallocate results and num_predictions
-                results_device = self.device if self.perform_everything_on_gpu else torch.device('cpu')
-                if self.verbose: print('preallocating arrays')
-                try:
-                    data = data.to(self.device)
-                    predicted_logits = torch.zeros((self.label_manager.num_segmentation_heads, *data.shape[1:]),
-                                                   dtype=torch.half,
-                                                   device=results_device)
-                    n_predictions = torch.zeros(data.shape[1:], dtype=torch.half,
+            # preallocate results and num_predictions
+            results_device = self.device if self.perform_everything_on_gpu else torch.device('cpu')
+            if self.verbose: print('preallocating arrays')
+            try:
+                data = data.to(self.device)
+                predicted_logits = torch.zeros((self.label_manager.num_segmentation_heads, *data.shape[1:]),
+                                               dtype=torch.half,
+                                               device=results_device)
+                n_predictions = torch.zeros(data.shape[1:], dtype=torch.half,
+                                            device=results_device)
+                if self.use_gaussian:
+                    gaussian = compute_gaussian(tuple(self.configuration_manager.patch_size), sigma_scale=1. / 8,
+                                                value_scaling_factor=1000,
                                                 device=results_device)
-                    if self.use_gaussian:
-                        gaussian = compute_gaussian(tuple(self.configuration_manager.patch_size), sigma_scale=1. / 8,
-                                                    value_scaling_factor=1000,
-                                                    device=results_device)
-                except RuntimeError:
-                    # sometimes the stuff is too large for GPUs. In that case fall back to CPU
-                    results_device = torch.device('cpu')
-                    data = data.to(results_device)
-                    predicted_logits = torch.zeros((self.label_manager.num_segmentation_heads, *data.shape[1:]),
-                                                   dtype=torch.half,
-                                                   device=results_device)
-                    n_predictions = torch.zeros(data.shape[1:], dtype=torch.half,
+            except RuntimeError:
+                # sometimes the stuff is too large for GPUs. In that case fall back to CPU
+                results_device = torch.device('cpu')
+                data = data.to(results_device)
+                predicted_logits = torch.zeros((self.label_manager.num_segmentation_heads, *data.shape[1:]),
+                                               dtype=torch.half,
+                                               device=results_device)
+                n_predictions = torch.zeros(data.shape[1:], dtype=torch.half,
+                                            device=results_device)
+                if self.use_gaussian:
+                    gaussian = compute_gaussian(tuple(self.configuration_manager.patch_size), sigma_scale=1. / 8,
+                                                value_scaling_factor=1000,
                                                 device=results_device)
-                    if self.use_gaussian:
-                        gaussian = compute_gaussian(tuple(self.configuration_manager.patch_size), sigma_scale=1. / 8,
-                                                    value_scaling_factor=1000,
-                                                    device=results_device)
-                finally:
-                    empty_cache(self.device)
+            finally:
+                empty_cache(self.device)
 
-                if self.verbose: print('running prediction')
-                for sl in tqdm(slicers, disable=not self.allow_tqdm):
-                    workon = data[sl][None]
-                    workon = workon.to(self.device, non_blocking=False)
+            if self.verbose: print('running prediction')
+            for sl in tqdm(slicers, disable=not self.allow_tqdm):
+                workon = data[sl][None]
+                workon = workon.to(self.device, non_blocking=False)
 
-                    prediction = self._internal_maybe_mirror_and_predict(workon)[0].to(results_device)
+                prediction = self._internal_maybe_mirror_and_predict(workon)[0].to(results_device)
 
-                    predicted_logits[sl] += (prediction * gaussian if self.use_gaussian else prediction)
-                    n_predictions[sl[1:]] += (gaussian if self.use_gaussian else 1)
+                predicted_logits[sl] += (prediction * gaussian if self.use_gaussian else prediction)
+                n_predictions[sl[1:]] += (gaussian if self.use_gaussian else 1)
 
-                predicted_logits /= n_predictions
+            predicted_logits /= n_predictions
         empty_cache(self.device)
         return predicted_logits[tuple([slice(None), *slicer_revert_padding[1:]])]
 
@@ -861,58 +861,58 @@ def predict_entry_point():
     #                           part_id=args.part_id,
     #                           device=device)
 
-
 if __name__ == '__main__':
-    # predict a bunch of files
-    from nnunetv2.paths import nnUNet_results, nnUNet_raw
-    predictor = nnUNetPredictor(
-        tile_step_size=0.5,
-        use_gaussian=True,
-        use_mirroring=True,
-        perform_everything_on_gpu=True,
-        device=torch.device('cuda', 0),
-        verbose=False,
-        verbose_preprocessing=False,
-        allow_tqdm=True
-        )
-    predictor.initialize_from_trained_model_folder(
-        join(nnUNet_results, 'Dataset003_Liver/nnUNetTrainer__nnUNetPlans__3d_lowres'),
-        use_folds=(0, ),
-        checkpoint_name='checkpoint_final.pth',
-    )
-    predictor.predict_from_files(join(nnUNet_raw, 'Dataset003_Liver/imagesTs'),
-                                 join(nnUNet_raw, 'Dataset003_Liver/imagesTs_predlowres'),
-                                 save_probabilities=False, overwrite=False,
-                                 num_processes_preprocessing=2, num_processes_segmentation_export=2,
-                                 folder_with_segs_from_prev_stage=None, num_parts=1, part_id=0)
-
-    # predict a numpy array
-    from nnunetv2.imageio.simpleitk_reader_writer import SimpleITKIO
-    img, props = SimpleITKIO().read_images([join(nnUNet_raw, 'Dataset003_Liver/imagesTr/liver_63_0000.nii.gz')])
-    ret = predictor.predict_single_npy_array(img, props, None, None, False)
-
-    iterator = predictor.get_data_iterator_from_raw_npy_data([img], None, [props], None, 1)
-    ret = predictor.predict_from_data_iterator(iterator, False, 1)
-
-
-    # predictor = nnUNetPredictor(
-    #     tile_step_size=0.5,
-    #     use_gaussian=True,
-    #     use_mirroring=True,
-    #     perform_everything_on_gpu=True,
-    #     device=torch.device('cuda', 0),
-    #     verbose=False,
-    #     allow_tqdm=True
-    #     )
-    # predictor.initialize_from_trained_model_folder(
-    #     join(nnUNet_results, 'Dataset003_Liver/nnUNetTrainer__nnUNetPlans__3d_cascade_fullres'),
-    #     use_folds=(0,),
-    #     checkpoint_name='checkpoint_final.pth',
-    # )
-    # predictor.predict_from_files(join(nnUNet_raw, 'Dataset003_Liver/imagesTs'),
-    #                              join(nnUNet_raw, 'Dataset003_Liver/imagesTs_predCascade'),
-    #                              save_probabilities=False, overwrite=False,
-    #                              num_processes_preprocessing=2, num_processes_segmentation_export=2,
-    #                              folder_with_segs_from_prev_stage='/media/isensee/data/nnUNet_raw/Dataset003_Liver/imagesTs_predlowres',
-    #                              num_parts=1, part_id=0)
-
+      predict_entry_point()
+#     # predict a bunch of files
+#     from nnunetv2.paths import nnUNet_results, nnUNet_raw
+#     predictor = nnUNetPredictor(
+#         tile_step_size=0.5,
+#         use_gaussian=True,
+#         use_mirroring=True,
+#         perform_everything_on_gpu=True,
+#         device=torch.device('cuda', 0),
+#         verbose=False,
+#         verbose_preprocessing=False,
+#         allow_tqdm=True
+#         )
+#     predictor.initialize_from_trained_model_folder(
+#         join(nnUNet_results, 'Dataset003_Liver/nnUNetTrainer__nnUNetPlans__3d_lowres'),
+#         use_folds=(0, ),
+#         checkpoint_name='checkpoint_final.pth',
+#     )
+#     predictor.predict_from_files(join(nnUNet_raw, 'Dataset003_Liver/imagesTs'),
+#                                  join(nnUNet_raw, 'Dataset003_Liver/imagesTs_predlowres'),
+#                                  save_probabilities=False, overwrite=False,
+#                                  num_processes_preprocessing=2, num_processes_segmentation_export=2,
+#                                  folder_with_segs_from_prev_stage=None, num_parts=1, part_id=0)
+#
+#     # predict a numpy array
+#     from nnunetv2.imageio.simpleitk_reader_writer import SimpleITKIO
+#     img, props = SimpleITKIO().read_images([join(nnUNet_raw, 'Dataset003_Liver/imagesTr/liver_63_0000.nii.gz')])
+#     ret = predictor.predict_single_npy_array(img, props, None, None, False)
+#
+#     iterator = predictor.get_data_iterator_from_raw_npy_data([img], None, [props], None, 1)
+#     ret = predictor.predict_from_data_iterator(iterator, False, 1)
+#
+#
+#     # predictor = nnUNetPredictor(
+#     #     tile_step_size=0.5,
+#     #     use_gaussian=True,
+#     #     use_mirroring=True,
+#     #     perform_everything_on_gpu=True,
+#     #     device=torch.device('cuda', 0),
+#     #     verbose=False,
+#     #     allow_tqdm=True
+#     #     )
+#     # predictor.initialize_from_trained_model_folder(
+#     #     join(nnUNet_results, 'Dataset003_Liver/nnUNetTrainer__nnUNetPlans__3d_cascade_fullres'),
+#     #     use_folds=(0,),
+#     #     checkpoint_name='checkpoint_final.pth',
+#     # )
+#     # predictor.predict_from_files(join(nnUNet_raw, 'Dataset003_Liver/imagesTs'),
+#     #                              join(nnUNet_raw, 'Dataset003_Liver/imagesTs_predCascade'),
+#     #                              save_probabilities=False, overwrite=False,
+#     #                              num_processes_preprocessing=2, num_processes_segmentation_export=2,
+#     #                              folder_with_segs_from_prev_stage='/media/isensee/data/nnUNet_raw/Dataset003_Liver/imagesTs_predlowres',
+#     #                              num_parts=1, part_id=0)
+#

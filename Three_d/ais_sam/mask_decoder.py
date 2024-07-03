@@ -76,7 +76,7 @@ class Mask_decoder(nn.Module):
         )
         self.decoder5 = UnetrUpBlock(
             spatial_dims=3,
-            in_channels=hidden_size,
+            in_channels=hidden_size // 3,
             out_channels=feature_size * 8,
             kernel_size=3,
             upsample_kernel_size=(1, 2, 2),
@@ -110,7 +110,6 @@ class Mask_decoder(nn.Module):
             norm_name=norm_name,
             res_block=res_block,
         )
-        # self.temp_conv = nn.Conv3d(256, 768, kernel_size=1, stride=1, padding=0, bias=True)
         self.out = UnetOutBlock(spatial_dims=3, in_channels=feature_size, out_channels=out_channels)  # type: ignore
 
     def proj_feat(self, x, hidden_size, feat_size):
@@ -119,29 +118,27 @@ class Mask_decoder(nn.Module):
         return x
 
 
-    def forward(self, x_in, hidden_states_out, b, d):
-        # old
-        # x_in = x_in.unsqueeze(0).permute(0, 2, 1, 3, 4).contiguous()[:, 0].unsqueeze(1)
-        # hidden_states_out[-1] = hidden_states_out[-1].permute(0, 2, 3, 1).contiguous()
-        # hidden_states_out = [i.unsqueeze(0).permute(0, 4, 1, 2, 3).contiguous() for i in hidden_states_out]
-        # hidden_states_out[0] = x_in
-
-        # new
-        x_in = x_in.contiguous().view(b, d, 3, 256, 256)[:, :, 0, :, :].unsqueeze(2).permute(0,2,1,3,4) # b, d, 1, 256, 256
-        # hidden_states_out[-1] = hidden_states_out[-1].permute(0, 2, 3, 1).contiguous()
+    def forward(self, hidden_states_out, semantic_prompts, b, d):
         hidden_states_out = [i.contiguous().view(b, d, i.shape[1],i.shape[2],i.shape[3]).permute(0, 4, 1, 2, 3) for i in hidden_states_out]
-        hidden_states_out[0] = x_in
 
-        enc1 = self.encoder1(x_in)
+        # enc1 由Semantic Prompts 产生
+        x1= semantic_prompts[0]
+        enc1 = self.encoder1(x1)
+
         x2 = hidden_states_out[3]
         enc2 = self.encoder2(self.proj_feat(x2, self.hidden_size, self.feat_size))
         x3 = hidden_states_out[6]
         enc3 = self.encoder3(self.proj_feat(x3, self.hidden_size, self.feat_size))
         x4 = hidden_states_out[9]
         enc4 = self.encoder4(self.proj_feat(x4, self.hidden_size, self.feat_size))
-        # dec4 = self.proj_feat(x, self.hidden_size, self.feat_size)
-        # dec4 = self.temp_conv(hidden_states_out[-1])
-        dec4 = hidden_states_out[-1]
+
+        # Add Semantic Prompts
+        enc2 = enc2 + semantic_prompts[1]
+        enc3 = enc3 + semantic_prompts[2]
+        enc4 = enc4 + semantic_prompts[3]
+
+        dec4 = hidden_states_out[-1] + semantic_prompts[4]
+
         dec3 = self.decoder5(dec4, enc4)
         dec2 = self.decoder4(dec3, enc3)
         dec1 = self.decoder3(dec2, enc2)
@@ -152,9 +149,16 @@ class Mask_decoder(nn.Module):
 
 if __name__ == '__main__':
     import os
+    b = 1
+    d = 40
     os.environ["CUDA_VISIBLE_DEVICES"] = "3"
-    net = Mask_decoder(in_channels=1, out_channels=2)
+    net = Mask_decoder(in_channels=1, out_channels=2, d_size=40)
     print(net)
+    total_params = sum(p.numel() for p in net.parameters())
+    print(f"Total parameters: {total_params / 1e6}M")
     x = torch.randn(1, 1, 40, 256, 256)
-    y = net(x)
+    fake = torch.randn(b*d, 16, 16 ,768)
+    hidden_states_out = [torch.randn(b*d, 256, 256, 3)] + [fake for i in range(11)] + [torch.randn(b*d,16,16,256)]
+    semantic_prompts = [torch.randn(b,1,d,256,256), torch.randn(b,32,d,128,128),torch.randn(b,64,d,64,64),torch.randn(b,128,d,32,32),torch.randn(b,256,d,16,16)]
+    y = net(hidden_states_out, semantic_prompts, b=1, d=40)
     print(y.shape)

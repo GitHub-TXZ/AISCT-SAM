@@ -1,3 +1,7 @@
+import os
+os.environ['nnUNet_raw'] = '/home/tanxz/nnUNet_Database/nnUNet_raw'
+os.environ['nnUNet_preprocessed'] = '/home/tanxz/nnUNet_Database/nnUNet_preprocessed'
+os.environ['nnUNet_results'] = '/home/tanxz/nnUNet_Database/nnUNet_results'
 import multiprocessing
 import shutil
 from multiprocessing import Pool
@@ -57,7 +61,8 @@ def convert_folder_with_preds_back_to_BraTS_labeling_convention(input_folder: st
 
 
 if __name__ == '__main__':
-    brats_data_dir = '/home/isensee/drives/E132-Rohdaten/BraTS_2021/training'
+    # brats_data_dir = '/home/isensee/drives/E132-Rohdaten/BraTS_2021/training'
+    brats_data_dir = '/home/tanxz/BraTs21/BraTS2021_Training_Data/'
 
     task_id = 137
     task_name = "BraTS2021"

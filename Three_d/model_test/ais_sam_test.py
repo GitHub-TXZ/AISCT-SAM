@@ -7,7 +7,8 @@ from Three_d.ais_sam.auto_prompter_3D import SPG
 if __name__ == '__main__':
     # os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     spg = SPG().cuda()
-    ais_sam = AIS_SAM(r=4, adapter_dim=64, spg=spg, d_size=40).cuda()
+    d_size = 20
+    ais_sam = AIS_SAM(r=4, adapter_dim=64, spg=spg, d_size=d_size).cuda()
     for name, param in ais_sam.named_parameters():
         if param.requires_grad:
             print(f"Layer: {name}, Parameters: {param.numel() / 1e6}M")
@@ -18,7 +19,7 @@ if __name__ == '__main__':
     #
     # for name, param in ais_sam.named_parameters():
     #     print(f"Layer: {name}, Parameters: {param.numel()/1e6}M")
-    input = torch.randn(1, 2, 40, 256, 256).cuda()
+    input = torch.randn(2, 2, d_size, 256, 256).cuda()
     output = ais_sam(input)
     total_allocated_memory_mib = torch.cuda.memory_allocated() / (1024 ** 2)
     max_memory_allocated_mib = torch.cuda.max_memory_allocated() / (1024 ** 2)

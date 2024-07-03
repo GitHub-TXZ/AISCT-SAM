@@ -52,10 +52,11 @@ from nnunetv2.training.lr_scheduler.polylr import PolyLRScheduler
 from nnunetv2.utilities.collate_outputs import collate_outputs
 from nnunetv2.utilities.default_n_proc_DA import get_allowed_n_proc_DA
 from nnunetv2.utilities.file_path_utilities import check_workers_alive_and_busy
-from nnunetv2.utilities.get_network_from_plans import get_network_from_plans
+from nnunetv2.utilities.get_network_from_plans import get_network_from_plans, get_network_from_plans_customized
 from nnunetv2.utilities.helpers import empty_cache, dummy_context
 from nnunetv2.utilities.label_handling.label_handling import convert_labelmap_to_one_hot, determine_num_input_channels
 from nnunetv2.utilities.plans_handling.plans_handler import PlansManager, ConfigurationManager
+from nnunetv2.utilities.utils import dynamic_import
 from sklearn.model_selection import KFold
 from torch import autocast, nn
 from torch import distributed as dist
@@ -63,10 +64,14 @@ from torch.cuda import device_count
 from torch.cuda.amp import GradScaler
 from torch.nn.parallel import DistributedDataParallel as DDP
 
+from monai.losses import DiceCELoss
+sys.path.append("/home/tanxz/Codes/nnUNet")
+
+
 
 class nnUNetTrainer(object):
     def __init__(self, plans: dict, configuration: str, fold: int, dataset_json: dict, unpack_dataset: bool = True,
-                 device: torch.device = torch.device('cuda')):
+                 device: torch.device = torch.device('cuda'), model_name='None', ex_name='None'):
         # From https://grugbrain.dev/. Worth a read ya big brains ;-)
 
         # apex predator of grug is complexity
@@ -83,6 +88,8 @@ class nnUNetTrainer(object):
         # OK OK I am guilty. But I tried.
         # https://www.osnews.com/images/comics/wtfm.jpg
         # https://i.pinimg.com/originals/26/b2/50/26b250a738ea4abc7a5af4d42ad93af0.jpg
+        self.model_name = model_name
+        self.ex_name = ex_name  #"Exname@b_2_p_20_320_256_s_5.0_0.3789_0.3789"
 
         self.is_ddp = dist.is_available() and dist.is_initialized()
         self.local_rank = 0 if not self.is_ddp else dist.get_rank()
@@ -109,6 +116,14 @@ class nnUNetTrainer(object):
             self.my_init_kwargs[k] = locals()[k]
 
         ###  Saving all the init args into class variables for later access
+        if '2d' not in self.ex_name and '2D' not in self.ex_name:
+            plans['configurations']['3d_fullres']['batch_size'] = int(self.ex_name.split("_")[1])
+            plans['configurations']['3d_fullres']['patch_size'] = [int(i) for i in self.ex_name.split("_")[3:6]]
+            plans['configurations']['3d_fullres']['spacing'] = [float(i) for i in self.ex_name.split("_")[7:]]
+        else:  # b_2_p_224_224
+            plans['configurations']['2d']['batch_size'] = int(self.ex_name.split("_")[1])
+            plans['configurations']['2d']['patch_size'] = [int(i) for i in self.ex_name.split("_")[3:5]]
+            plans['configurations']['2d']['spacing'] = [float(i) for i in self.ex_name.split("_")[6:]]
         self.plans_manager = PlansManager(plans)
         self.configuration_manager = self.plans_manager.get_configuration(configuration)
         self.configuration_name = configuration
@@ -123,7 +138,7 @@ class nnUNetTrainer(object):
         self.output_folder_base = join(nnUNet_results, self.plans_manager.dataset_name,
                                        self.__class__.__name__ + '__' + self.plans_manager.plans_name + "__" + configuration) \
             if nnUNet_results is not None else None
-        self.output_folder = join(self.output_folder_base, f'fold_{fold}')
+        self.output_folder = join(self.output_folder_base, f'fold_{fold}_{self.model_name}_{self.ex_name}')
 
         self.preprocessed_dataset_folder = join(self.preprocessed_dataset_folder_base,
                                                 self.configuration_manager.data_identifier)
@@ -139,12 +154,12 @@ class nnUNetTrainer(object):
                 if self.is_cascaded else None
 
         ### Some hyperparameters for you to fiddle with
-        self.initial_lr = 1e-2
+        self.initial_lr = 0.0001 #1e-4
         self.weight_decay = 3e-5
         self.oversample_foreground_percent = 0.33
         self.num_iterations_per_epoch = 250
         self.num_val_iterations_per_epoch = 50
-        self.num_epochs = 1000
+        self.num_epochs = 500
         self.current_epoch = 0
 
         ### Dealing with labels/regions
@@ -200,11 +215,36 @@ class nnUNetTrainer(object):
         if not self.was_initialized:
             self.num_input_channels = determine_num_input_channels(self.plans_manager, self.configuration_manager,
                                                                    self.dataset_json)
-
-            self.network = self.build_network_architecture(self.plans_manager, self.dataset_json,
-                                                           self.configuration_manager,
-                                                           self.num_input_channels,
-                                                           enable_deep_supervision=True).to(self.device)
+            # 根据数据集特性动态配置的模型
+            if self.model_name == 'nnUNet':
+                self.network = self.build_network_architecture(self.plans_manager, self.dataset_json,
+                                                               self.configuration_manager,
+                                                               self.num_input_channels,
+                                                               enable_deep_supervision=True).to(self.device)
+            # 根据数据集特性动态配置的模型
+            elif self.model_name == 'ClSeg':
+               self.network = get_network_from_plans_customized(self.plans_manager, self.dataset_json,
+                                                               self.configuration_manager,
+                                                               self.num_input_channels,
+                                                               deep_supervision=False).to(self.device)
+               x = torch.randn(4, 1, 16, 320, 320).cuda()
+               y = self.network(x)
+               # 结构固定的模型
+            else:
+                if '2d' not in self.ex_name:
+                    module_name = f"Three_d.{self.model_name.lower()}"
+                    dynamic_class = dynamic_import(module_name, self.model_name)
+                    if dynamic_class:
+                        print(f"成功导入类 {dynamic_class} 来自模块 {module_name}")
+                        self.network = dynamic_class().to(self.device)
+                else:
+                    module_name = f"Two_d.{self.model_name.lower()}"
+                    dynamic_class = dynamic_import(module_name, self.model_name)
+                    if dynamic_class:
+                        print(f"成功导入类 {dynamic_class} 来自模块 {module_name}")
+                        self.network = dynamic_class().to(self.device)
+            total_params = round(sum(p.numel() for p in self.network.parameters() if p.requires_grad) / 1e6, 2)
+            print("Total Trainable Parameters:", total_params)
             # compile network for free speedup
             if self._do_i_compile():
                 self.print_to_log_file('Compiling network...')
@@ -215,8 +255,10 @@ class nnUNetTrainer(object):
             if self.is_ddp:
                 self.network = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.network)
                 self.network = DDP(self.network, device_ids=[self.local_rank])
-
-            self.loss = self._build_loss()
+            if self.model_name == 'nnUNet' or self.model_name == 'I2PC_Net': # or self.model_name == "ClSeg":
+                self.loss = self._build_loss()
+            else:
+                self.loss = DiceCELoss(include_background=False, softmax=True, to_onehot_y=True, lambda_dice=0.5, lambda_ce=0.5)
             self.was_initialized = True
         else:
             raise RuntimeError("You have called self.initialize even though the trainer was already initialized. "
@@ -460,8 +502,10 @@ class nnUNetTrainer(object):
             self.print_to_log_file('These are the global plan.json settings:\n', dct, '\n', add_timestamp=False)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.SGD(self.network.parameters(), self.initial_lr, weight_decay=self.weight_decay,
-                                    momentum=0.99, nesterov=True)
+        # optimizer = torch.optim.SGD(self.network.parameters(), self.initial_lr, weight_decay=self.weight_decay,
+        #                             momentum=0.99, nesterov=True)
+        optimizer = torch.optim.AdamW(self.network.parameters(), lr=self.initial_lr, weight_decay=self.weight_decay)
+
         lr_scheduler = PolyLRScheduler(optimizer, self.initial_lr, self.num_epochs)
         return optimizer, lr_scheduler
 
@@ -795,7 +839,9 @@ class nnUNetTrainer(object):
         maybe_mkdir_p(self.output_folder)
 
         # make sure deep supervision is on in the network
-        self.set_deep_supervision_enabled(True)
+        if self.model_name == 'nnUNet' or self.model_name == 'I2PC_Net': #or self.model_name == "ClSeg":
+            self.set_deep_supervision_enabled(True)
+
 
         self.print_plans()
         empty_cache(self.device)
@@ -882,7 +928,15 @@ class nnUNetTrainer(object):
         with autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
             output = self.network(data)
             # del data
-            l = self.loss(output, target)
+            if self.model_name == 'nnUNet' or self.model_name == 'I2PC_Net': #or self.model_name == "ClSeg":
+                if self.model_name == 'I2PC_Net':
+                    target[3][target[3]>0] = 1
+                    target[4][target[4]>0] = 1
+                    target[5][target[5]>0] = 1
+                l = self.loss(output, target)
+            else:
+                l = self.loss(output, target[0])
+
 
         if self.grad_scaler is not None:
             self.grad_scaler.scale(l).backward()
@@ -928,12 +982,22 @@ class nnUNetTrainer(object):
         with autocast(self.device.type, enabled=True) if self.device.type == 'cuda' else dummy_context():
             output = self.network(data)
             del data
-            l = self.loss(output, target)
+            if self.model_name == 'nnUNet' or self.model_name == 'I2PC_Net': #or self.model_name == "ClSeg":
+                if self.model_name == 'I2PC_Net':
+                    target[3][target[3]>0] = 1
+                    target[4][target[4]>0] = 1
+                    target[5][target[5]>0] = 1
+                l = self.loss(output, target)
+            else:
+                l = self.loss(output, target[0])
 
         # we only need the output with the highest output resolution
-        output = output[0]
-        target = target[0]
-
+        if self.model_name == 'nnUNet' or self.model_name == 'I2PC_Net': #or self.model_name == "ClSeg":
+            output = output[0]
+            target = target[0]
+        else:
+            output = output
+            target = target[0]
         # the following is needed for online evaluation. Fake dice (green line)
         axes = [0] + list(range(2, output.ndim))
 
@@ -1102,7 +1166,8 @@ class nnUNetTrainer(object):
                 self.grad_scaler.load_state_dict(checkpoint['grad_scaler_state'])
 
     def perform_actual_validation(self, save_probabilities: bool = False):
-        self.set_deep_supervision_enabled(False)
+        if self.model_name == 'nnUNet' or self.model_name == 'I2PC_Net': # or self.model_name == "ClSeg":
+            self.set_deep_supervision_enabled(False)
         self.network.eval()
 
         predictor = nnUNetPredictor(tile_step_size=0.5, use_gaussian=True, use_mirroring=True,
@@ -1226,8 +1291,8 @@ class nnUNetTrainer(object):
                                                 self.label_manager.ignore_label, chill=True)
             self.print_to_log_file("Validation complete", also_print_to_console=True)
             self.print_to_log_file("Mean Validation Dice: ", (metrics['foreground_mean']["Dice"]), also_print_to_console=True)
-
-        self.set_deep_supervision_enabled(True)
+        if self.model_name == 'nnUNet' or self.model_name == 'I2PC_Net': #or self.model_name == "ClSeg":
+            self.set_deep_supervision_enabled(True)
         compute_gaussian.cache_clear()
 
     def run_training(self):

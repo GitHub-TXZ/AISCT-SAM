@@ -3,8 +3,9 @@ import os
 from copy import deepcopy
 from multiprocessing import Pool
 from typing import Tuple, List, Union, Optional
-
+import json
 import numpy as np
+np.bool = np.bool_
 from batchgenerators.utilities.file_and_folder_operations import subfiles, join, save_json, load_json, \
     isfile
 from nnunetv2.configuration import default_num_processes
@@ -16,7 +17,9 @@ from nnunetv2.imageio.simpleitk_reader_writer import SimpleITKIO
 from nnunetv2.utilities.json_export import recursive_fix_for_json_export
 from nnunetv2.utilities.plans_handling.plans_handler import PlansManager
 
-
+from medpy.metric import binary
+from collections import defaultdict
+from scipy.stats import pearsonr, spearmanr
 def label_or_region_to_key(label_or_region: Union[int, Tuple[int]]):
     return str(label_or_region)
 
@@ -39,13 +42,19 @@ def save_summary_json(results: dict, output_file: str):
     results_converted = deepcopy(results)
     # convert keys in mean metrics
     results_converted['mean'] = {label_or_region_to_key(k): results['mean'][k] for k in results['mean'].keys()}
+    results_converted['std'] = {label_or_region_to_key(k): results['std'][k] for k in results['std'].keys()}
+    results_converted['pcc'] = {label_or_region_to_key(k): results['pcc'][k] for k in results['pcc'].keys()}
+    results_converted['avg_with_std'] = {label_or_region_to_key(k): results['avg_with_std'][k] for k in results['avg_with_std'].keys()}
+
     # convert metric_per_case
     for i in range(len(results_converted["metric_per_case"])):
         results_converted["metric_per_case"][i]['metrics'] = \
             {label_or_region_to_key(k): results["metric_per_case"][i]['metrics'][k]
              for k in results["metric_per_case"][i]['metrics'].keys()}
     # sort_keys=True will make foreground_mean the first entry and thus easy to spot
-    save_json(results_converted, output_file, sort_keys=True)
+    # save_json(results_converted, output_file, sort_keys=True)
+    with open(output_file, 'w') as f:
+        json.dump(results_converted, f, sort_keys=True, indent=4, ensure_ascii=False)
 
 
 def load_summary_json(filename: str):
@@ -92,7 +101,7 @@ def compute_metrics(reference_file: str, prediction_file: str, image_reader_writ
     # load images
     seg_ref, seg_ref_dict = image_reader_writer.read_seg(reference_file)
     seg_pred, seg_pred_dict = image_reader_writer.read_seg(prediction_file)
-    # spacing = seg_ref_dict['spacing']
+    spacing = seg_ref_dict['spacing']
 
     ignore_mask = seg_ref == ignore_label if ignore_label is not None else None
 
@@ -104,7 +113,20 @@ def compute_metrics(reference_file: str, prediction_file: str, image_reader_writ
         results['metrics'][r] = {}
         mask_ref = region_or_label_to_mask(seg_ref, r)
         mask_pred = region_or_label_to_mask(seg_pred, r)
+        # Xianzhen Tan added
+        vol_ref = np.sum(mask_ref)*np.prod(spacing) / 1000
+        vol_pred = np.sum(mask_pred)*np.prod(spacing) / 1000
         tp, fp, fn, tn = compute_tp_fp_fn_tn(mask_ref, mask_pred, ignore_mask)
+        if tp+fp == 0:
+            results['metrics'][r]['HD95'] = np.nan
+            results['metrics'][r]['ASSD'] = np.nan
+        else:
+            if len(np.squeeze(mask_pred).shape) == 2:
+                spacing = (1, 1) # 如果是二维RGB图像，spacing为1
+            hd95 = binary.hd95(np.squeeze(mask_pred).astype(np.uint8), np.squeeze(mask_ref).astype(np.uint8), voxelspacing=spacing)
+            assd = binary.assd(np.squeeze(mask_pred).astype(np.uint8), np.squeeze(mask_ref).astype(np.uint8), voxelspacing=spacing)
+            results['metrics'][r]['HD95'] = hd95
+            results['metrics'][r]['ASSD'] = assd
         if tp + fp + fn == 0:
             results['metrics'][r]['Dice'] = np.nan
             results['metrics'][r]['IoU'] = np.nan
@@ -117,6 +139,14 @@ def compute_metrics(reference_file: str, prediction_file: str, image_reader_writ
         results['metrics'][r]['TN'] = tn
         results['metrics'][r]['n_pred'] = fp + tp
         results['metrics'][r]['n_ref'] = fn + tp
+        results['metrics'][r]['vol_ref'] = vol_ref
+        results['metrics'][r]['vol_pred'] = vol_pred
+        results['metrics'][r]['sensitivity'] = tp / (tp + fn)
+        results['metrics'][r]['specificity'] = tn / (tn + fp)
+        if tp + fp == 0:
+            results['metrics'][r]['precision'] = np.nan
+        else:
+            results['metrics'][r]['precision'] = tp / (tp + fp)
     return results
 
 
@@ -127,6 +157,8 @@ def compute_metrics_on_folder(folder_ref: str, folder_pred: str, output_file: st
                               ignore_label: int = None,
                               num_processes: int = default_num_processes,
                               chill: bool = True) -> dict:
+    if "013" in folder_ref:
+        regions_or_labels.append((1,2))
     """
     output_file must end with .json; can be None
     """
@@ -156,6 +188,27 @@ def compute_metrics_on_folder(folder_ref: str, folder_pred: str, output_file: st
         for m in metric_list:
             means[r][m] = np.nanmean([i['metrics'][r][m] for i in results])
 
+    # std metric per class  and pearson correlation coefficient # Xianzhen Tan added
+    # vol_ref_list = defaultdict(list)
+    # vol_pred_list = defaultdict(list)
+    metric_list = list(results[0]['metrics'][regions_or_labels[0]].keys())
+    stds = {}
+    pcc = {}
+    avg_with_std = {}
+    for r in regions_or_labels:
+        stds[r] = {}
+        pcc[r] = {}
+        avg_with_std[r] = {}
+        for m in metric_list:
+            stds[r][m] = np.nanstd([i['metrics'][r][m] for i in results])
+            if m == 'Dice' or m == 'IoU' or m == 'precision' or m == 'sensitivity' or m == 'specificity':
+                avg_with_std[r][m] = r'{:.2f}±{:.2f}'.format(means[r][m]*100,stds[r][m]*100)
+            else:
+                avg_with_std[r][m] = r'{:.2f}±{:.2f}'.format(means[r][m], stds[r][m])
+        pcc[r]["vol_ref"] = [i['metrics'][r]['vol_ref'] for i in results]
+        pcc[r]["vol_pred"] = [i['metrics'][r]['vol_pred'] for i in results]
+        pcc[r]["volume_pearson_correlation_coefficient"] = pearsonr(pcc[r]["vol_ref"], pcc[r]["vol_pred"])
+
     # foreground mean
     foreground_mean = {}
     for m in metric_list:
@@ -165,11 +218,16 @@ def compute_metrics_on_folder(folder_ref: str, folder_pred: str, output_file: st
                 continue
             values.append(means[k][m])
         foreground_mean[m] = np.mean(values)
+    # print('DONE')
+
 
     [recursive_fix_for_json_export(i) for i in results]
     recursive_fix_for_json_export(means)
+    recursive_fix_for_json_export(stds)
     recursive_fix_for_json_export(foreground_mean)
-    result = {'metric_per_case': results, 'mean': means, 'foreground_mean': foreground_mean}
+    recursive_fix_for_json_export(avg_with_std)
+    recursive_fix_for_json_export(pcc)
+    result = {'avg_with_std':avg_with_std, 'metric_per_case': results, 'mean': means, 'std': stds, 'foreground_mean': foreground_mean, 'pcc': pcc}
     if output_file is not None:
         save_summary_json(result, output_file)
     return result
