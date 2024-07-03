@@ -17,7 +17,8 @@ scipy 1.11.3 <br />
 * Install our modified nnUNet as below
   
 ```
-cd nnUNet
+git clone https://github.com/GitHub-TXZ/AISCT-SAM.git
+cd AISCT-SAM
 pip install -e .
 
 ```
