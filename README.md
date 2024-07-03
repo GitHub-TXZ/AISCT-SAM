@@ -24,18 +24,21 @@ pip install -e .
 ```
 ### 1 Acute Ischemic Stroke Dataset (AISD)
 ### 1.1 Dataset access
-AISD dataset can be downloaded from (https://github.com/griffinliang/aisd). Pre-process the datasets using the preprocess codes in nnUNet/nnunet/dataset_conversion.
+AISD dataset can be downloaded from (https://github.com/griffinliang/aisd). 
+### 1.2 Skull-stripping
+After converting the DICOM files of the AISD dataset to NIfTI format, perform skull stripping according to the instructions at https://github.com/WuChanada/StripSkullCT.
+### 1.3 Flip-Registration
+Then, perform flip registration according to ./myscripts/Registration. Finally, organize the dataset in the nnUNet-expected format according to the code in nnUNet/nnunet/dataset_conversion.
+### 1.3 Pre-processing
+Some compared methods use the same pre-processing steps as nnUNet. The documentation of the pre-processing can be found at [[DOC]](./nnUNet/documentation) <br />
 
-### 1.2 Pre-processing
-all compared methods use the same pre-processing steps as nnUNet. The documentation of the pre-processing can be found at [[DOC]](./nnUNet/documentation) <br />
+### 1.4 Training
+conda activate <YOUR ENV NAME>
+Simply run the following in your command line:
+* Run `CUDA_VISIBLE_DEVICES=0 nnUNetv2_train -dataset_name_or_id TASK_ID -model_name AIS_SAM -ex_name Ex1@b_2_p_20_256_256_s_3.0_0.4375_0.4375` for training.
 
-### 1.3 Training
-cd ClSeg_package/ClSeg/run
-
-* Run `python run_training.py -network_trainer nnUNetTrainerV2_AISD -gpu='0' -task={task_id} -outpath='AISD'` for training.
-
-### 1.4 Testing 
-* Run `python run_training.py -network_trainer nnUNetTrainerV2_AISD -gpu='0' -task={task_id} -outpath='AISD' -val --val_folder='validation_output'` for testing.
+### 1.5 Testing 
+* Run `CUDA_VISIBLE_DEVICES=0 nnUNetv2_train -dataset_name_or_id TASK_ID -model_name AIS_SAM -ex_name Ex1@b_2_p_20_256_256_s_3.0_0.4375_0.4375 --val` for testing.
 
 ### 2.1 Pre-trained model
 The pre-trained model of AISD dataset can be downloaded from [[Baidu YUN]](https://pan.baidu.com/s/1RmswEZsQewr7UcC14UCKMA) with the password "4phx".
