@@ -57,7 +57,7 @@ For the AIS-Specific methods and SAM-based methods. We endeavored to implement t
 [[kaung et al.]](https://github.com/hulinkuang/Cl-SegNet) </br>
 [[UNet-RF]](https://github.com/WuChanada/Acute-ischemic-lesion-segmentation-in-NCCT) </br>
 [[ADN]](https://github.com/nihaomiao/MICCAI22_ADN) </br>
-[[SAM-Med2D]](hhttps://github.com/OpenGVLab/SAM-Med2D) </br>
+[[SAM-Med2D]](https://github.com/OpenGVLab/SAM-Med2D) </br>
 [[SAM]](https://github.com/facebookresearch/segment-anything) </br>
 [[SAM-Med3D]](https://github.com/uni-medical/SAM-Med3D) </br>
 [[MedSAM]](https://github.com/bowang-lab/MedSAM) </br>
