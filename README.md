@@ -35,13 +35,13 @@ Then, perform flip registration according to ./myscripts/Registration. Finally, 
 ### 1.4 Pre-processing
 Some compared methods use the same pre-processing steps as nnUNet. The documentation of the pre-processing can be found at [[DOC]](./nnUNet/documentation) <br />
 
-### 1.4 Training
+### 1.5 Training
 conda activate <YOUR ENV NAME>
 Simply run the following in your command line:
 * Run `CUDA_VISIBLE_DEVICES=0 nnUNetv2_train -dataset_name_or_id TASK_ID -model_name AIS_SAM -ex_name Ex1@b_2_p_20_256_256_s_3.0_0.4375_0.4375` for training.  <br />
 
 
-### 1.5 Testing 
+### 1.6 Testing 
 * Run `CUDA_VISIBLE_DEVICES=0 nnUNetv2_train -dataset_name_or_id TASK_ID -model_name AIS_SAM -ex_name Ex1@b_2_p_20_256_256_s_3.0_0.4375_0.4375 --val` for testing.  <br />
 
 
