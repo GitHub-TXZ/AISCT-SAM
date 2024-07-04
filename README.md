@@ -55,7 +55,7 @@ The pre-trained model of AISD dataset can be downloaded from [[Baidu YUN]](https
 For the AIS-Specific methods and SAM-based methods. We endeavored to implement them using our AIS datasets.our reproduced codes. The links of their open-source codes are listed as follows: <br />
 
 [[kaung et al.]](https://github.com/hulinkuang/Cl-SegNet) </br>
-[[UNet-RF]](https://github.com/WuChanada/Acute-ischemic-lesion-segmentation-in-NCCT)
+[[UNet-RF]](https://github.com/WuChanada/Acute-ischemic-lesion-segmentation-in-NCCT) </br>
 [[ADN]](https://github.com/nihaomiao/MICCAI22_ADN) </br>
 [[SAM-Med2D]](hhttps://github.com/OpenGVLab/SAM-Med2D) </br>
 [[SAM]](https://github.com/facebookresearch/segment-anything) </br>
