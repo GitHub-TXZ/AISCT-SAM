@@ -50,7 +50,7 @@ The pre-trained model of AISD dataset can be downloaded from [[Baidu YUN]](https
 
 
 ### 2.2 Reproduction details and codes 
- During reproduction, for the CNN-based methods, Transformer-based methods, Hybrid-CNN-Transformer-based methods, Mamba-based mehtods. We integrated them into the nnUNEt framework. All of these 3D methods can be found at [[DOC]](./Three_d).  <br />
+ During reproduction, for the CNN-based methods, Transformer-based methods, Hybrid-CNN-Transformer-based methods, Mamba-based mehtods. We integrated them into the nnUNet framework. All of these 3D methods can be found at [[DOC]](./Three_d).  <br />
 
 For the AIS-Specific methods and SAM-based methods. We endeavored to implement them using our AIS datasets.our reproduced codes. The links of their open-source codes are listed as follows: <br />
 
