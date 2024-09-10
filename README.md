@@ -1,6 +1,6 @@
 # AISCT-SAM
-The code for the paper "AISCT-SAM: Customized SAM-Med2D with 3D Context Awareness and Self-Prompt Generation for Fully Automatic Acute Ischemic Stroke Lesion Segmentation on NonContrast CT Scans" submitted to IEEE TMI. <br />
-<!-- 这是一个注释 -->
+The data and code for the paper "AISCT-SAM: A Clinical Knowledge-Driven Fine-Tuning Strategy for Applying Foundation Model to Fully Automatic Acute Ischemic Stroke Lesion Segmentation on Non-Contrast CT Scans" submitted to IEEE ICASSP 2025. <br />
+<!--AISCT-SAM: Customized SAM-Med2D with 3D Context Awareness and Self-Prompt Generation for Fully Automatic Acute Ischemic Stroke Lesion Segmentation on NonContrast CT Scans" submitted to IEEE TMI-->
 
 
 
