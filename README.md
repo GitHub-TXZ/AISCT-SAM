@@ -35,7 +35,7 @@ After converting the DICOM files of the AISD dataset to NIfTI format, perform sk
 Then, perform flip registration according to ./myscripts/Registration. Finally, organize the dataset in the nnUNet-expected format according to the code in nnUNet/nnunet/dataset_conversion.  <br />
 
 ### 1.4 Pre-processing
-Some compared methods use the same pre-processing steps as nnUNet. The documentation of the pre-processing can be found at [[DOC]](./nnUNet/documentation) <br />
+Some compared methods use the same pre-processing steps as nnUNet. The documentation of the pre-processing can be found at [[DOC]](./AISCT-SAM/documentation) <br />
 
 ### 1.5 Training
 conda activate <YOUR ENV NAME>
