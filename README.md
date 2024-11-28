@@ -48,8 +48,7 @@ Simply run the following in your command line:
 
 
 ### 2.1 Pre-trained model
-The pre-trained model of AISD dataset can be downloaded from [[Baidu YUN]](https://pan.baidu.com/s/1m2YjNKDkr1bwF7DtIH1Tdw) with the password "14av".  <br />
-
+The pre-trained model of AISD dataset can be downloaded from [[Baidu YUN]](https://pan.baidu.com/s/1HGm7uOHVSNxDCcB2rQRYRw) with the password "puyl".  <br />
 
 ### 2.2 Reproduction details and codes 
  During reproduction, for the CNN-based methods, Transformer-based methods, Hybrid-CNN-Transformer-based methods, Mamba-based mehtods. We integrated them into the nnUNet framework. All of these 3D methods can be found at [[DOC]](./Three_d).  <br />
